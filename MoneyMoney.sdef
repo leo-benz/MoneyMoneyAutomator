@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE dictionary SYSTEM "file://localhost/System/Library/DTDs/sdef.dtd">
+<dictionary title="MoneyMoney">
+	<suite name="MoneyMoney" code="MONY">
+		<command name="export accounts" code="MONYexpa">
+			<cocoa class="AppleScriptHandler"/>
+			<access-group identifier="com.moneymoney-app.export"/>
+			<result description="Returns an XML property list of available accounts." type="text"/>
+		</command>
+		<command name="export categories" code="MONYexpc">
+			<cocoa class="AppleScriptHandler"/>
+			<access-group identifier="com.moneymoney-app.export"/>
+			<result description="Returns an XML property list of available categories." type="text"/>
+		</command>
+		<command name="export transactions" code="MONYexpt">
+			<cocoa class="AppleScriptHandler"/>
+			<access-group identifier="com.moneymoney-app.export"/>
+			<parameter name="from account" code="acct" description="UUID, IBAN, account number, account name or account group name." type="text" optional="yes"/>
+			<parameter name="from category" code="ctgy" description="UUID, category name or category group name. Nested category names can be separated with backslashes." type="text" optional="yes"/>
+			<parameter name="from date" code="frdt" description="Start date (YYYY-MM-DD)." type="any"/>
+			<parameter name="to date" code="todt" description="End date (YYYY-MM-DD)." type="any" optional="yes"/>
+			<parameter name="as" code="frmt" description="File format. Can be &quot;csv&quot;, &quot;ofx&quot;, &quot;sta&quot;, &quot;xls&quot;, &quot;numbers&quot;, &quot;camt.053&quot;, &quot;plist&quot; or one of the user-defined Lua script export extensions." type="text"/>
+			<result description="Returns a file path for all file formats except &quot;plist&quot;. The temporary file will be valid until the next restart of MoneyMoney. For file format &quot;plist&quot; an XML property list is returned instead." type="text"/>
+		</command>
+		<command name="export portfolio" code="MONYexpp">
+			<cocoa class="AppleScriptHandler"/>
+			<access-group identifier="com.moneymoney-app.export"/>
+			<parameter name="from account" code="acct" description="UUID, IBAN, account number, account name or account group name." type="text" optional="yes"/>
+			<parameter name="from asset class" code="asst" description="UUID or asset class name." type="text" optional="yes"/>
+			<parameter name="as" code="frmt" description="File format. At the moment only &quot;plist&quot; is supported." type="text"/>
+			<result description="Returns an XML property list." type="text"/>
+		</command>
+		<command name="create bank transfer" code="MONYtrfs">
+			<cocoa class="AppleScriptHandler"/>
+			<access-group identifier="com.moneymoney-app.import"/>
+			<parameter name="from account" code="acct" description="UUID, IBAN, account number or account name." type="text" optional="yes"/>
+			<parameter name="to" code="name" description="Recipient name." type="text" optional="yes"/>
+			<parameter name="iban" code="iban" description="Recipient IBAN." type="text" optional="yes"/>
+			<parameter name="bic" code="bicd" description="Recipient BIC." type="text" optional="yes"/>
+			<parameter name="amount" code="amnt" description="Amount in Euro." type="real" optional="yes"/>
+			<parameter name="purpose" code="rmtu" description="Purpose text." type="text" optional="yes"/>
+			<parameter name="endtoend reference" code="eref" description="SEPA end-to-end reference." type="text" optional="yes"/>
+			<parameter name="purpose code" code="purp" description="SEPA purpose code." type="text" optional="yes"/>
+			<parameter name="instrument code" code="inst" description="SEPA local instrument code. Use TRF for normal payments and INST for instant payments. Default is TRF." type="text" optional="yes"/>
+			<parameter name="scheduled date" code="date" description="Scheduled date (YYYY-MM-DD)." type="any" optional="yes"/>
+			<parameter name="into" code="into" description="By default a payment window will be opened. If this parameter is set to &quot;outbox&quot;, the payment will be silently saved into the outbox instead." type="text" optional="yes"/>
+		</command>
+		<command name="create batch transfer" code="MONYtrfb">
+			<cocoa class="AppleScriptHandler"/>
+			<access-group identifier="com.moneymoney-app.import"/>
+			<parameter name="from" code="file" description="File path to SEPA XML file. The file must be located within the app sandbox of MoneyMoney." type="file"/>
+		</command>
+		<command name="create direct debit" code="MONYdbts">
+			<cocoa class="AppleScriptHandler"/>
+			<access-group identifier="com.moneymoney-app.import"/>
+			<parameter name="from account" code="acct" description="UUID, IBAN, account number or account name." type="text" optional="yes"/>
+			<parameter name="for" code="name" description="Debtor name." type="text" optional="yes"/>
+			<parameter name="iban" code="iban" description="Debtor IBAN." type="text" optional="yes"/>
+			<parameter name="bic" code="bicd" description="Debtor BIC." type="text" optional="yes"/>
+			<parameter name="amount" code="amnt" description="Amount in Euro." type="real" optional="yes"/>
+			<parameter name="purpose" code="rmtu" description="Purpose text." type="text" optional="yes"/>
+			<parameter name="endtoend reference" code="eref" description="SEPA end-to-end reference." type="text" optional="yes"/>
+			<parameter name="purpose code" code="purp" description="SEPA purpose code." type="text" optional="yes"/>
+			<parameter name="instrument code" code="inst" description="SEPA local instrument code. Use CORE for core direct debits and B2B for b2b direct debits. Default is CORE." type="text" optional="yes"/>
+			<parameter name="sequence code" code="sequ" description="SEPA sequence code. Use RCUR for first and recurring direct debits, FNAL for final direct debits and OOFF for one-off direct debits. Default is RCUR." type="text" optional="yes"/>
+			<parameter name="mandate reference" code="mref" description="Mandate reference." type="text" optional="yes"/>
+			<parameter name="mandate date" code="mdat" description="Mandate date (YYYY-MM-DD)." type="any" optional="yes"/>
+			<parameter name="scheduled date" code="date" description="Scheduled date (YYYY-MM-DD)." type="any" optional="yes"/>
+			<parameter name="into" code="into" description="By default a payment window will be opened. If this parameter is set to &quot;outbox&quot;, the payment will be silently saved into the outbox instead." type="text" optional="yes"/>
+		</command>
+		<command name="create batch direct debit" code="MONYdbtb">
+			<cocoa class="AppleScriptHandler"/>
+			<access-group identifier="com.moneymoney-app.import"/>
+			<parameter name="from" code="file" description="File path to SEPA XML file. The file must be located within the app sandbox of MoneyMoney." type="file"/>
+		</command>
+		<command name="add transaction" code="MONYaddt">
+			<cocoa class="AppleScriptHandler"/>
+			<access-group identifier="com.moneymoney-app.import"/>
+			<parameter name="to account" code="acct" description="Offline account (UUID, account name, IBAN or account number)." type="text"/>
+			<parameter name="on date" code="date" description="Booking date (YYYY-MM-DD)." type="any"/>
+			<parameter name="to" code="name" description="Debitor name or creditor name." type="text"/>
+			<parameter name="amount" code="amnt" description="Amount in account currency." type="real"/>
+			<parameter name="purpose" code="rmtu" description="Purpose text." type="text" optional="yes"/>
+			<parameter name="category" code="ctgy" description="UUID or category name. Nested category names can be separated with backslashes. If no category is specified, then auto-categorization will be applied." type="text" optional="yes"/>
+		</command>
+		<command name="set transaction" code="MONYsett">
+			<cocoa class="AppleScriptHandler"/>
+			<access-group identifier="com.moneymoney-app.import"/>
+			<parameter name="id" code="uuid" description="Transaction ID, which must be looked up with `export transactions [...] as &quot;plist&quot;` beforehand." type="integer"/>
+			<parameter name="checkmark to" code="mark" description="Toogle checkmark to &quot;on&quot; or &quot;off&quot;." type="text" optional="yes"/>
+			<parameter name="category to" code="ctgy" description="UUID or category name. Nested category names can be separated with backslashes." type="text" optional="yes"/>
+			<parameter name="comment to" code="note" description="Set comment." type="text" optional="yes"/>
+		</command>
+	</suite>
+</dictionary>
