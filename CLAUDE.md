@@ -117,6 +117,7 @@ python3 -m pytest tests/test_llm_client.py::TestLMStudioClient::test_parse_sugge
 ### Environment Variables
 ```bash
 export LM_STUDIO_URL="http://localhost:1234/v1"  # LM Studio API endpoint
+export LM_STUDIO_MODEL="model-name"              # Specific model to use (optional, auto-detects if not set)
 export NUM_SUGGESTIONS="5"                       # Number of AI suggestions to show
 export LOG_LEVEL="DEBUG"                         # Logging verbosity
 ```
