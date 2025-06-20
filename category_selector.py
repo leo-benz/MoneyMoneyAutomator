@@ -285,3 +285,91 @@ class CategorySelector:
             print(f"{indent}- {name}")
             if subtree and current_depth < max_depth - 1:
                 self._print_tree(subtree, indent + "  ", max_depth, current_depth + 1)
+    
+    def offer_rule_generation(self) -> bool:
+        """Ask user if they want to generate a categorization rule."""
+        # Color codes
+        CYAN = '\033[96m'
+        GREEN = '\033[92m'
+        YELLOW = '\033[93m'
+        BOLD = '\033[1m'
+        RESET = '\033[0m'
+        
+        print(f"\n🤖 {CYAN}{BOLD}Generate Rule{RESET}")
+        print("─" * 30)
+        print(f"Would you like to generate a MoneyMoney rule for similar transactions?")
+        print(f"   {GREEN}[y]{RESET} 🎯 Yes, generate rule")
+        print(f"   {YELLOW}[n]{RESET} ⏭️  No, skip rule generation")
+        
+        print(f"\n👉 {BOLD}Your choice (no Enter needed):{RESET} ", end='', flush=True)
+        choice = self._getch().lower()
+        print(f"{BOLD}{choice}{RESET}")  # Echo the choice with formatting
+        
+        return choice == 'y'
+    
+    def display_rule_proposal(self, rule: Dict) -> str:
+        """Display the generated rule and handle user choice."""
+        # Color codes
+        CYAN = '\033[96m'
+        GREEN = '\033[92m'
+        YELLOW = '\033[93m'
+        BLUE = '\033[94m'
+        RED = '\033[91m'
+        BOLD = '\033[1m'
+        RESET = '\033[0m'
+        
+        rule_text = rule.get('rule', '')
+        explanation = rule.get('explanation', '')
+        confidence = rule.get('confidence', 0.0)
+        
+        # Confidence color coding
+        if confidence >= 0.8:
+            conf_color = GREEN
+            conf_icon = "🟢"
+        elif confidence >= 0.6:
+            conf_color = YELLOW
+            conf_icon = "🟡"
+        else:
+            conf_color = RED
+            conf_icon = "🔴"
+        
+        print(f"\n🤖 {CYAN}{BOLD}AI Rule Proposal{RESET}")
+        print("─" * 60)
+        print(f"📋 {BOLD}Rule:{RESET} {BLUE}{rule_text}{RESET}")
+        print(f"💭 {BOLD}Explanation:{RESET} {explanation}")
+        print(f"{conf_icon} {BOLD}Confidence:{RESET} {conf_color}{confidence:.0%}{RESET}")
+        
+        while True:
+            print(f"\n⚡ {BOLD}Options:{RESET}")
+            print(f"   {GREEN}[c]{RESET} 📋 Copy to clipboard")
+            print(f"   {YELLOW}[d]{RESET} ⏭️  Decline rule")
+            
+            print(f"\n👉 {BOLD}Your choice (no Enter needed):{RESET} ", end='', flush=True)
+            choice = self._getch().lower()
+            print(f"{BOLD}{choice}{RESET}")  # Echo the choice with formatting
+            
+            if choice == 'c':
+                success = self._copy_rule_to_clipboard(rule_text)
+                if success:
+                    print(f"✅ Rule copied to clipboard! Paste it into MoneyMoney rules.")
+                else:
+                    print(f"❌ Failed to copy rule to clipboard.")
+                return 'copy'
+            elif choice == 'd':
+                print("Rule proposal declined.")
+                return 'declined'
+            else:
+                print("Invalid input. Please try again.")
+    
+    def _copy_rule_to_clipboard(self, rule_text: str) -> bool:
+        """Copy rule text to clipboard using pbcopy."""
+        try:
+            process = subprocess.run(
+                ['pbcopy'],
+                input=rule_text.encode(),
+                check=True
+            )
+            return process.returncode == 0
+        except Exception as e:
+            logger.error(f"Failed to copy to clipboard: {e}")
+            return False
