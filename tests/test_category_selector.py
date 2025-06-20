@@ -351,3 +351,112 @@ class TestCategorySelector:
         
         mock_fallback_search.assert_called_once()
         assert result['action'] == 'back'
+
+
+class TestRuleDisplayAndCopy:
+    """Test rule display and clipboard copy functionality."""
+    
+    def setup_method(self):
+        self.sample_categories = [
+            {'uuid': '1', 'name': 'Coffee', 'full_name': 'Food & Dining\\Coffee'},
+            {'uuid': '2', 'name': 'Gas', 'full_name': 'Transportation\\Gas'}
+        ]
+        self.selector = CategorySelector(self.sample_categories)
+        
+        self.sample_rule = {
+            'rule': 'name:"STARBUCKS"',
+            'explanation': 'Matches all Starbucks transactions for coffee categorization',
+            'confidence': 0.90
+        }
+    
+    @patch('sys.stdout', new_callable=StringIO)
+    def test_rule_display_formatting(self, mock_stdout):
+        """Test that rule proposal is displayed with proper formatting."""
+        with patch.object(self.selector, '_getch', return_value='d'):
+            result = self.selector.display_rule_proposal(self.sample_rule)
+            
+            output = mock_stdout.getvalue()
+            assert 'AI Rule Proposal' in output
+            assert 'name:"STARBUCKS"' in output
+            assert 'Matches all Starbucks transactions' in output
+            assert '90%' in output or '0.90' in output
+            assert result == 'declined'
+    
+    @patch('subprocess.run')
+    @patch('sys.stdout', new_callable=StringIO)
+    def test_rule_copy_to_clipboard(self, mock_stdout, mock_subprocess):
+        """Test copying rule to clipboard."""
+        mock_subprocess.return_value.returncode = 0
+        
+        with patch.object(self.selector, '_getch', return_value='c'):
+            result = self.selector.display_rule_proposal(self.sample_rule)
+            
+            assert result == 'copy'
+            mock_subprocess.assert_called_once()
+            call_args = mock_subprocess.call_args
+            assert 'pbcopy' in call_args[0][0]
+            assert self.sample_rule['rule'].encode() == call_args[1]['input']
+    
+    @patch('sys.stdout', new_callable=StringIO)
+    def test_offer_rule_generation_acceptance(self, mock_stdout):
+        """Test user accepting rule generation offer."""
+        with patch.object(self.selector, '_getch', return_value='y'):
+            result = self.selector.offer_rule_generation()
+            
+            assert result is True
+            output = mock_stdout.getvalue()
+            assert 'Generate Rule' in output or 'generate rule' in output.lower()
+    
+    @patch('sys.stdout', new_callable=StringIO)
+    def test_offer_rule_generation_rejection(self, mock_stdout):
+        """Test user rejecting rule generation offer."""
+        with patch.object(self.selector, '_getch', return_value='n'):
+            result = self.selector.offer_rule_generation()
+            
+            assert result is False
+    
+    @patch('sys.stdout', new_callable=StringIO)
+    def test_rule_display_options(self, mock_stdout):
+        """Test rule display shows correct options."""
+        with patch.object(self.selector, '_getch', return_value='d'):
+            self.selector.display_rule_proposal(self.sample_rule)
+            
+            output = mock_stdout.getvalue()
+            assert '[c]' in output  # Copy option
+            assert '[d]' in output  # Decline option
+            assert 'Copy to clipboard' in output or 'Copy' in output
+    
+    @patch('subprocess.run')
+    @patch('sys.stdout', new_callable=StringIO)
+    def test_clipboard_copy_failure_handling(self, mock_stdout, mock_subprocess):
+        """Test handling of clipboard copy failure."""
+        mock_subprocess.side_effect = Exception("pbcopy failed")
+        
+        with patch.object(self.selector, '_getch', return_value='c'):
+            result = self.selector.display_rule_proposal(self.sample_rule)
+            
+            output = mock_stdout.getvalue()
+            assert 'failed' in output.lower() or 'error' in output.lower()
+            assert result == 'copy'  # Still returns copy action even if failed
+    
+    @patch('sys.stdout', new_callable=StringIO)
+    def test_rule_display_invalid_input_handling(self, mock_stdout):
+        """Test handling of invalid input in rule display."""
+        with patch.object(self.selector, '_getch', side_effect=['x', 'invalid', 'd']):
+            result = self.selector.display_rule_proposal(self.sample_rule)
+            
+            output = mock_stdout.getvalue()
+            assert 'Invalid' in output or 'try again' in output.lower()
+            assert result == 'declined'
+    
+    @patch('sys.stdout', new_callable=StringIO)
+    def test_rule_confidence_color_coding(self, mock_stdout):
+        """Test that rule confidence is displayed with appropriate color coding."""
+        high_confidence_rule = {**self.sample_rule, 'confidence': 0.95}
+        
+        with patch.object(self.selector, '_getch', return_value='d'):
+            self.selector.display_rule_proposal(high_confidence_rule)
+            
+            output = mock_stdout.getvalue()
+            # Check for high confidence indicators (green color codes or high confidence text)
+            assert '95%' in output or '0.95' in output

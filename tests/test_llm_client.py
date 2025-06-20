@@ -76,7 +76,7 @@ class TestLMStudioClient:
         payload = call_args[1]['json']
         assert payload['messages'][0]['content'] == 'test prompt'
         assert payload['temperature'] == 0.3
-        assert payload['max_tokens'] == 4000
+        assert payload['max_tokens'] == 8000
     
     @patch('requests.Session.post')
     def test_call_llm_network_error(self, mock_post):
@@ -283,3 +283,321 @@ class TestLMStudioClient:
         call_args = mock_post.call_args
         payload = call_args[1]['json']
         assert payload['model'] == 'test-model'
+
+
+class TestRuleGeneration:
+    """Test AI rule generation functionality."""
+    
+    def setup_method(self):
+        with patch('llm_client.Config') as mock_config:
+            mock_config.LM_STUDIO_BASE_URL = 'http://localhost:1234/v1'
+            mock_config.LM_STUDIO_MODEL = None
+            mock_config.NUM_SUGGESTIONS = 5
+            self.client = LMStudioClient()
+        
+        self.sample_transaction = {
+            'id': 12345,
+            'name': 'STARBUCKS STORE #12345',
+            'amount': -4.50,
+            'currency': 'EUR',
+            'date': '2024-01-15',
+            'purpose': 'Coffee purchase'
+        }
+        
+        self.sample_category = {
+            'uuid': 'coffee-uuid',
+            'full_name': 'Food & Dining\\Coffee'
+        }
+    
+    @patch.object(LMStudioClient, '_call_llm')
+    def test_generate_categorization_rule_basic(self, mock_call_llm):
+        """Test basic rule generation."""
+        mock_call_llm.return_value = '''
+        {
+            "rule": "name:\\"STARBUCKS\\"",
+            "explanation": "Matches all Starbucks transactions",
+            "confidence": 0.9
+        }
+        '''
+        
+        result = self.client.generate_categorization_rule(self.sample_transaction, self.sample_category)
+        
+        assert result is not None
+        assert 'rule' in result
+        assert 'explanation' in result
+        assert 'confidence' in result
+        assert 'STARBUCKS' in result['rule']
+        mock_call_llm.assert_called_once()
+    
+    @patch.object(LMStudioClient, '_call_llm')
+    def test_rule_generation_with_merchant_name(self, mock_call_llm):
+        """Test rule generation focusing on merchant name."""
+        mock_call_llm.return_value = '''
+        {
+            "rule": "name:\\"STARBUCKS\\"",
+            "explanation": "Categorizes all Starbucks transactions as coffee purchases",
+            "confidence": 0.95
+        }
+        '''
+        
+        result = self.client.generate_categorization_rule(self.sample_transaction, self.sample_category)
+        
+        assert 'name:' in result['rule']
+        assert 'STARBUCKS' in result['rule']
+        assert result['confidence'] >= 0.9
+    
+    @patch.object(LMStudioClient, '_call_llm')
+    def test_rule_generation_with_purpose_keywords(self, mock_call_llm):
+        """Test rule generation using purpose keywords."""
+        transaction_with_purpose = {
+            **self.sample_transaction,
+            'purpose': 'COFFEE SHOP PURCHASE VISA-DEB'
+        }
+        
+        mock_call_llm.return_value = '''
+        {
+            "rule": "purpose:\\"COFFEE\\"",
+            "explanation": "Matches transactions with coffee-related keywords in purpose",
+            "confidence": 0.85
+        }
+        '''
+        
+        result = self.client.generate_categorization_rule(transaction_with_purpose, self.sample_category)
+        
+        assert 'purpose:' in result['rule']
+        assert 'COFFEE' in result['rule']
+    
+    @patch.object(LMStudioClient, '_call_llm')
+    def test_rule_generation_with_amount_conditions(self, mock_call_llm):
+        """Test rule generation with amount-based conditions."""
+        small_transaction = {
+            **self.sample_transaction,
+            'amount': -5.50
+        }
+        
+        mock_call_llm.return_value = '''
+        {
+            "rule": "name:\\"STARBUCKS\\" AND amount<10.00",
+            "explanation": "Matches small Starbucks purchases typically for coffee",
+            "confidence": 0.80
+        }
+        '''
+        
+        result = self.client.generate_categorization_rule(small_transaction, self.sample_category)
+        
+        assert 'amount<' in result['rule'] or 'amount>' in result['rule']
+        assert 'STARBUCKS' in result['rule']
+    
+    @patch.object(LMStudioClient, '_call_llm')
+    def test_rule_validation_moneymoney_syntax(self, mock_call_llm):
+        """Test that generated rules follow MoneyMoney syntax."""
+        mock_call_llm.return_value = '''
+        {
+            "rule": "name:\\"STARBUCKS\\" OR name:\\"COSTA\\"",
+            "explanation": "Matches multiple coffee chain merchants",
+            "confidence": 0.90
+        }
+        '''
+        
+        result = self.client.generate_categorization_rule(self.sample_transaction, self.sample_category)
+        
+        rule = result['rule']
+        # Check for valid MoneyMoney syntax patterns
+        assert any(pattern in rule for pattern in ['name:', 'purpose:', 'amount', 'AND', 'OR'])
+        # Check for proper quoting
+        if 'name:' in rule:
+            assert '"' in rule  # Should have quoted values
+    
+    @patch.object(LMStudioClient, '_call_llm')
+    def test_rule_generation_error_handling(self, mock_call_llm):
+        """Test error handling in rule generation."""
+        # Test JSON parsing error
+        mock_call_llm.return_value = 'invalid json'
+        
+        result = self.client.generate_categorization_rule(self.sample_transaction, self.sample_category)
+        
+        assert result is None
+        
+        # Test LLM call failure
+        mock_call_llm.side_effect = Exception("LLM call failed")
+        
+        result = self.client.generate_categorization_rule(self.sample_transaction, self.sample_category)
+        
+        assert result is None
+    
+    @patch.object(LMStudioClient, '_call_llm')
+    def test_rule_generation_complex_scenarios(self, mock_call_llm):
+        """Test rule generation for complex transaction scenarios."""
+        complex_transaction = {
+            'id': 12346,
+            'name': 'SHELL 1234567',
+            'amount': -85.50,
+            'purpose': 'FUEL PURCHASE CONTACTLESS',
+            'bookingText': 'DEBIT CARD PAYMENT'
+        }
+        
+        gas_category = {
+            'uuid': 'gas-uuid',
+            'full_name': 'Transportation\\Gas'
+        }
+        
+        mock_call_llm.return_value = '''
+        {
+            "rule": "name:\\"SHELL\\" AND purpose:\\"FUEL\\" AND amount>50.00",
+            "explanation": "Matches Shell gas station purchases over $50 for fuel",
+            "confidence": 0.92
+        }
+        '''
+        
+        result = self.client.generate_categorization_rule(complex_transaction, gas_category)
+        
+        assert 'SHELL' in result['rule']
+        assert 'FUEL' in result['rule']
+        assert 'amount>' in result['rule']
+        assert result['confidence'] > 0.9
+
+
+class TestEnhancedCategorization:
+    """Test enhanced categorization with hierarchical category context."""
+    
+    def setup_method(self):
+        with patch('llm_client.Config') as mock_config:
+            mock_config.LM_STUDIO_BASE_URL = 'http://localhost:1234/v1'
+            mock_config.LM_STUDIO_MODEL = None
+            mock_config.NUM_SUGGESTIONS = 5
+            self.client = LMStudioClient()
+        
+        self.sample_transaction = {
+            'id': 12345,
+            'name': 'STARBUCKS STORE #12345',
+            'amount': -4.50,
+            'currency': 'EUR',
+            'date': '2024-01-15',
+            'purpose': 'Coffee purchase'
+        }
+        
+        # Enhanced categories with parent context
+        self.enhanced_categories = [
+            {
+                'uuid': 'starbucks-uuid',
+                'name': 'Starbucks',
+                'full_name': 'Food & Dining\\Coffee Shops\\Starbucks',
+                'parent_path': 'Food & Dining\\Coffee Shops',
+                'hierarchy_level': 3
+            },
+            {
+                'uuid': 'coffee-uuid',
+                'name': 'Coffee',
+                'full_name': 'Food & Dining\\Coffee',
+                'parent_path': 'Food & Dining',
+                'hierarchy_level': 2
+            },
+            {
+                'uuid': 'gas-uuid',
+                'name': 'Gas',
+                'full_name': 'Transportation\\Gas',
+                'parent_path': 'Transportation',
+                'hierarchy_level': 2
+            }
+        ]
+    
+    @patch.object(LMStudioClient, '_call_llm')
+    def test_enhanced_categorization_prompt_with_hierarchy(self, mock_call_llm):
+        """Test that categorization prompts include hierarchical context."""
+        mock_call_llm.return_value = '''
+        {
+            "suggestions": [
+                {
+                    "category_path": "Food & Dining\\\\Coffee Shops\\\\Starbucks",
+                    "uuid": "starbucks-uuid",
+                    "confidence": 0.95,
+                    "reasoning": "Direct match with Starbucks coffee shop"
+                }
+            ]
+        }
+        '''
+        
+        result = self.client.categorize_transaction(self.sample_transaction, self.enhanced_categories)
+        
+        assert len(result) == 1
+        assert result[0]['category']['full_name'] == 'Food & Dining\\Coffee Shops\\Starbucks'
+        
+        # Check that the prompt included hierarchical information
+        call_args = mock_call_llm.call_args[0][0]
+        assert 'Food & Dining\\Coffee Shops\\Starbucks' in call_args
+        assert 'parent context' in call_args.lower() or 'hierarchy' in call_args.lower()
+    
+    @patch.object(LMStudioClient, '_call_llm')
+    def test_category_context_in_ai_suggestions(self, mock_call_llm):
+        """Test that AI suggestions benefit from category hierarchy context."""
+        mock_call_llm.return_value = '''
+        {
+            "suggestions": [
+                {
+                    "category_path": "Food & Dining\\\\Coffee",
+                    "uuid": "coffee-uuid",
+                    "confidence": 0.90,
+                    "reasoning": "Coffee purchase, specific coffee shop subcategory may be more appropriate"
+                }
+            ]
+        }
+        '''
+        
+        result = self.client.categorize_transaction(self.sample_transaction, self.enhanced_categories)
+        
+        # Should find the coffee category with parent context
+        assert len(result) == 1
+        assert result[0]['category']['parent_path'] == 'Food & Dining'
+        assert result[0]['category']['hierarchy_level'] == 2
+    
+    @patch.object(LMStudioClient, '_call_llm')
+    def test_hierarchical_category_matching(self, mock_call_llm):
+        """Test that hierarchical category matching works correctly."""
+        mock_call_llm.return_value = '''
+        {
+            "suggestions": [
+                {
+                    "category_path": "Food & Dining\\\\Coffee Shops\\\\Starbucks",
+                    "uuid": "starbucks-uuid",
+                    "confidence": 0.95,
+                    "reasoning": "Exact match for Starbucks transactions"
+                },
+                {
+                    "category_path": "Food & Dining\\\\Coffee",
+                    "uuid": "coffee-uuid",
+                    "confidence": 0.85,
+                    "reasoning": "General coffee category"
+                }
+            ]
+        }
+        '''
+        
+        result = self.client.categorize_transaction(self.sample_transaction, self.enhanced_categories)
+        
+        # Should return both suggestions with correct hierarchy info
+        assert len(result) == 2
+        
+        # First suggestion (Starbucks) should be more specific
+        starbucks_suggestion = result[0]
+        assert starbucks_suggestion['category']['name'] == 'Starbucks'
+        assert starbucks_suggestion['category']['hierarchy_level'] == 3
+        
+        # Second suggestion (Coffee) should be less specific
+        coffee_suggestion = result[1]
+        assert coffee_suggestion['category']['name'] == 'Coffee'
+        assert coffee_suggestion['category']['hierarchy_level'] == 2
+    
+    def test_format_categories_for_prompt_includes_hierarchy(self):
+        """Test that category formatting includes hierarchical information."""
+        formatted = self.client._format_categories_for_prompt(self.enhanced_categories)
+        
+        # Should include full hierarchical paths
+        assert 'Food & Dining\\Coffee Shops\\Starbucks' in formatted
+        assert 'Food & Dining\\Coffee' in formatted
+        assert 'Transportation\\Gas' in formatted
+        
+        # Should include parent context information
+        lines = formatted.split('\n')
+        starbucks_line = next(line for line in lines if 'Starbucks' in line)
+        assert 'Food & Dining\\Coffee Shops\\Starbucks' in starbucks_line
+        assert 'starbucks-uuid' in starbucks_line

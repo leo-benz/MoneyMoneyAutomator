@@ -62,3 +62,114 @@ def mock_logger():
     """Mock logger for testing"""
     with patch('logging.getLogger') as mock:
         yield mock.return_value
+
+@pytest.fixture
+def sample_cached_suggestions():
+    """Sample cached AI results for testing"""
+    return {
+        '12345': [
+            {
+                'category': {'uuid': '1', 'full_name': 'Food & Dining\\Coffee'},
+                'confidence': 0.9,
+                'reasoning': 'Coffee shop transaction'
+            }
+        ],
+        '12346': [
+            {
+                'category': {'uuid': '2', 'full_name': 'Transportation\\Gas'},
+                'confidence': 0.8,
+                'reasoning': 'Gas station transaction'
+            }
+        ]
+    }
+
+@pytest.fixture
+def sample_pending_transactions():
+    """Sample transactions with pending status for testing"""
+    return [
+        {
+            'id': 12345,
+            'name': 'PENDING MERCHANT',
+            'amount': -25.00,
+            'currency': 'EUR',
+            'date': '2024-01-15',
+            'purpose': 'Pending purchase',
+            'booked': False
+        },
+        {
+            'id': 12346,
+            'name': 'UNBOOKED TRANSACTION',
+            'amount': -50.00,
+            'currency': 'EUR',
+            'date': '2024-01-16',
+            'purpose': 'Unbooked transaction',
+            'bookingDate': None
+        }
+    ]
+
+@pytest.fixture
+def sample_booked_transactions():
+    """Sample fully booked transactions for testing"""
+    return [
+        {
+            'id': 12347,
+            'name': 'BOOKED MERCHANT',
+            'amount': -30.00,
+            'currency': 'EUR',
+            'date': '2024-01-15',
+            'purpose': 'Completed purchase',
+            'booked': True,
+            'bookingDate': '2024-01-15'
+        },
+        {
+            'id': 12348,
+            'name': 'FULLY PROCESSED',
+            'amount': -40.00,
+            'currency': 'EUR',
+            'date': '2024-01-16',
+            'purpose': 'Processed transaction',
+            'booked': True,
+            'bookingDate': '2024-01-16'
+        }
+    ]
+
+@pytest.fixture
+def sample_hierarchical_categories():
+    """Sample categories with parent context for testing"""
+    return [
+        {
+            'uuid': '1', 
+            'name': 'Coffee', 
+            'full_name': 'Food & Dining\\Coffee',
+            'parent_path': 'Food & Dining',
+            'hierarchy_level': 2
+        },
+        {
+            'uuid': '2', 
+            'name': 'Restaurants', 
+            'full_name': 'Food & Dining\\Restaurants',
+            'parent_path': 'Food & Dining',
+            'hierarchy_level': 2
+        },
+        {
+            'uuid': '3', 
+            'name': 'Gas', 
+            'full_name': 'Transportation\\Gas',
+            'parent_path': 'Transportation',
+            'hierarchy_level': 2
+        },
+        {
+            'uuid': '4', 
+            'name': 'Food & Dining', 
+            'full_name': 'Food & Dining',
+            'parent_path': '',
+            'hierarchy_level': 1
+        }
+    ]
+
+@pytest.fixture
+def mock_clipboard_copy():
+    """Mock pbcopy functionality for testing"""
+    with patch('subprocess.run') as mock_run:
+        mock_run.return_value.returncode = 0
+        yield mock_run
