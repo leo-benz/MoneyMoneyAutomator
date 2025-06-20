@@ -1,6 +1,7 @@
 import pytest
 from unittest.mock import Mock, patch, MagicMock
 from io import StringIO
+import subprocess
 from category_selector import CategorySelector
 
 
@@ -33,6 +34,7 @@ class TestCategorySelector:
         assert len(self.selector.categories) == 5
         assert len(self.selector.sorted_categories) == 5
         assert self.selector.sorted_categories[0]['full_name'] == 'Bills\\Utilities'
+        assert hasattr(self.selector, 'fzf_available')
     
     @patch('sys.stdout', new_callable=StringIO)
     def test_display_suggestions(self, mock_stdout):
@@ -175,28 +177,31 @@ class TestCategorySelector:
     @patch('builtins.input')
     @patch.object(CategorySelector, '_find_matching_categories')
     @patch.object(CategorySelector, '_display_search_results')
-    def test_search_categories_success(self, mock_display, mock_find, mock_input):
+    @patch('shutil.which', return_value=None)
+    def test_fallback_search_categories_success(self, mock_which, mock_display, mock_find, mock_input):
         mock_input.return_value = 'coffee'
         mock_find.return_value = [self.sample_categories[0]]
         mock_display.return_value = {'action': 'categorize', 'category': self.sample_categories[0]}
         
-        result = self.selector._search_categories()
+        result = self.selector._fallback_search_categories()
         
         assert result['action'] == 'categorize'
         mock_find.assert_called_once_with('coffee')
         mock_display.assert_called_once()
     
     @patch('builtins.input', return_value='back')
-    def test_search_categories_back(self, mock_input):
-        result = self.selector._search_categories()
+    @patch('shutil.which', return_value=None)
+    def test_fallback_search_categories_back(self, mock_which, mock_input):
+        result = self.selector._fallback_search_categories()
         assert result['action'] == 'back'
     
     @patch('builtins.input', return_value='a')
     @patch('sys.stdout', new_callable=StringIO)
-    def test_search_categories_too_short(self, mock_stdout, mock_input):
+    @patch('shutil.which', return_value=None)  
+    def test_fallback_search_categories_too_short(self, mock_which, mock_stdout, mock_input):
         mock_input.side_effect = ['a', 'back']
         
-        result = self.selector._search_categories()
+        result = self.selector._fallback_search_categories()
         
         output = mock_stdout.getvalue()
         assert 'Please enter at least 2 characters' in output
@@ -204,18 +209,20 @@ class TestCategorySelector:
     
     @patch('builtins.input', return_value='xyz123')
     @patch('sys.stdout', new_callable=StringIO)
-    def test_search_categories_no_matches(self, mock_stdout, mock_input):
+    @patch('shutil.which', return_value=None)
+    def test_fallback_search_categories_no_matches(self, mock_which, mock_stdout, mock_input):
         mock_input.side_effect = ['xyz123', 'back']
         
-        result = self.selector._search_categories()
+        result = self.selector._fallback_search_categories()
         
         output = mock_stdout.getvalue()
         assert 'No matching categories found' in output
         assert result['action'] == 'back'
     
     @patch('builtins.input', side_effect=KeyboardInterrupt())
-    def test_search_categories_keyboard_interrupt(self, mock_input):
-        result = self.selector._search_categories()
+    @patch('shutil.which', return_value=None)
+    def test_fallback_search_categories_keyboard_interrupt(self, mock_which, mock_input):
+        result = self.selector._fallback_search_categories()
         assert result['action'] == 'back'
     
     def test_build_category_tree(self):
@@ -251,3 +258,96 @@ class TestCategorySelector:
         assert '- Bills' in output
         assert '- Food & Dining' in output
         assert '  - Coffee' not in output
+    
+    @patch('shutil.which', return_value='/usr/local/bin/fzf')
+    def test_init_with_fzf_available(self, mock_which):
+        selector = CategorySelector(self.sample_categories)
+        assert selector.fzf_available is True
+    
+    @patch('shutil.which', return_value=None)
+    def test_init_with_fzf_unavailable(self, mock_which):
+        selector = CategorySelector(self.sample_categories)
+        assert selector.fzf_available is False
+    
+    @patch('shutil.which', return_value='/usr/local/bin/fzf')
+    @patch('subprocess.Popen')
+    def test_fzf_search_categories_success(self, mock_popen, mock_which):
+        selector = CategorySelector(self.sample_categories)
+        
+        mock_process = Mock()
+        mock_process.communicate.return_value = ('Food & Dining\\Coffee\n', '')
+        mock_process.returncode = 0
+        mock_popen.return_value = mock_process
+        
+        result = selector._fzf_search_categories()
+        
+        assert result['action'] == 'categorize'
+        assert result['category']['uuid'] == '1'
+        
+        mock_popen.assert_called_once()
+        args, kwargs = mock_popen.call_args
+        assert args[0] == ['fzf', '--height=50%', '--reverse', '--prompt=Category: ', '--header=Select a category (ESC to cancel)']
+    
+    @patch('shutil.which', return_value='/usr/local/bin/fzf')
+    @patch('subprocess.Popen')
+    def test_fzf_search_categories_cancelled(self, mock_popen, mock_which):
+        selector = CategorySelector(self.sample_categories)
+        
+        mock_process = Mock()
+        mock_process.communicate.return_value = ('', '')
+        mock_process.returncode = 130  # User cancelled
+        mock_popen.return_value = mock_process
+        
+        result = selector._fzf_search_categories()
+        
+        assert result['action'] == 'back'
+    
+    @patch('shutil.which', return_value='/usr/local/bin/fzf')
+    @patch('subprocess.Popen')
+    def test_fzf_search_categories_no_match(self, mock_popen, mock_which):
+        selector = CategorySelector(self.sample_categories)
+        
+        mock_process = Mock()
+        mock_process.communicate.return_value = ('', '')
+        mock_process.returncode = 1  # No match
+        mock_popen.return_value = mock_process
+        
+        result = selector._fzf_search_categories()
+        
+        assert result['action'] == 'back'
+    
+    @patch('shutil.which', return_value='/usr/local/bin/fzf')
+    @patch('subprocess.Popen')
+    @patch.object(CategorySelector, '_fallback_search_categories')
+    def test_fzf_search_categories_exception_fallback(self, mock_fallback, mock_popen, mock_which):
+        selector = CategorySelector(self.sample_categories)
+        
+        mock_popen.side_effect = Exception("FZF not working")
+        mock_fallback.return_value = {'action': 'back'}
+        
+        result = selector._fzf_search_categories()
+        
+        assert result['action'] == 'back'
+        mock_fallback.assert_called_once()
+    
+    @patch('shutil.which', return_value='/usr/local/bin/fzf')
+    @patch.object(CategorySelector, '_fzf_search_categories')
+    def test_search_categories_uses_fzf_when_available(self, mock_fzf_search, mock_which):
+        selector = CategorySelector(self.sample_categories)
+        mock_fzf_search.return_value = {'action': 'categorize', 'category': self.sample_categories[0]}
+        
+        result = selector._search_categories()
+        
+        mock_fzf_search.assert_called_once()
+        assert result['action'] == 'categorize'
+    
+    @patch('shutil.which', return_value=None)
+    @patch.object(CategorySelector, '_fallback_search_categories')
+    def test_search_categories_uses_fallback_when_fzf_unavailable(self, mock_fallback_search, mock_which):
+        selector = CategorySelector(self.sample_categories)
+        mock_fallback_search.return_value = {'action': 'back'}
+        
+        result = selector._search_categories()
+        
+        mock_fallback_search.assert_called_once()
+        assert result['action'] == 'back'

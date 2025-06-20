@@ -76,7 +76,7 @@ class TestLMStudioClient:
         payload = call_args[1]['json']
         assert payload['messages'][0]['content'] == 'test prompt'
         assert payload['temperature'] == 0.3
-        assert payload['max_tokens'] == 1000
+        assert payload['max_tokens'] == 4000
     
     @patch('requests.Session.post')
     def test_call_llm_network_error(self, mock_post):
@@ -153,6 +153,9 @@ class TestLMStudioClient:
     def test_test_connection_success(self, mock_get):
         mock_response = Mock()
         mock_response.raise_for_status.return_value = None
+        mock_response.json.return_value = {
+            'data': [{'id': 'test-model'}]
+        }
         mock_get.return_value = mock_response
         
         result = self.client.test_connection()
@@ -193,3 +196,90 @@ class TestLMStudioClient:
         )
         
         assert result == []
+    
+    @patch('requests.Session.get')
+    def test_get_available_models_success(self, mock_get):
+        mock_response = Mock()
+        mock_response.json.return_value = {
+            'data': [
+                {'id': 'deepseek/deepseek-r1-0528-qwen3-8b'},
+                {'id': 'google/gemma-3-1b'}
+            ]
+        }
+        mock_get.return_value = mock_response
+        
+        models = self.client._get_available_models()
+        
+        assert len(models) == 2
+        assert 'deepseek/deepseek-r1-0528-qwen3-8b' in models
+        assert 'google/gemma-3-1b' in models
+    
+    @patch('requests.Session.get')
+    def test_get_available_models_error(self, mock_get):
+        mock_get.side_effect = Exception("Connection error")
+        
+        models = self.client._get_available_models()
+        
+        assert models == []
+    
+    @patch.object(LMStudioClient, '_get_available_models')
+    def test_get_model_to_use_configured(self, mock_get_models):
+        self.client.model = 'configured-model'
+        
+        model = self.client._get_model_to_use()
+        
+        assert model == 'configured-model'
+        mock_get_models.assert_not_called()
+    
+    @patch.object(LMStudioClient, '_get_available_models')
+    def test_get_model_to_use_single_model(self, mock_get_models):
+        self.client.model = None
+        mock_get_models.return_value = ['single-model']
+        
+        model = self.client._get_model_to_use()
+        
+        assert model == 'single-model'
+    
+    @patch.object(LMStudioClient, '_get_available_models')
+    def test_get_model_to_use_prefer_chat_model(self, mock_get_models):
+        self.client.model = None
+        mock_get_models.return_value = ['text-model', 'chat-model', 'instruct-model']
+        
+        model = self.client._get_model_to_use()
+        
+        assert model == 'chat-model'
+    
+    @patch.object(LMStudioClient, '_get_available_models')
+    def test_get_model_to_use_first_model_fallback(self, mock_get_models):
+        self.client.model = None
+        mock_get_models.return_value = ['first-model', 'second-model']
+        
+        model = self.client._get_model_to_use()
+        
+        assert model == 'first-model'
+    
+    @patch.object(LMStudioClient, '_get_available_models')
+    def test_get_model_to_use_no_models(self, mock_get_models):
+        self.client.model = None
+        mock_get_models.return_value = []
+        
+        model = self.client._get_model_to_use()
+        
+        assert model is None
+    
+    @patch.object(LMStudioClient, '_get_model_to_use')
+    @patch('requests.Session.post')
+    def test_call_llm_with_model(self, mock_post, mock_get_model):
+        mock_get_model.return_value = 'test-model'
+        mock_response = Mock()
+        mock_response.json.return_value = {
+            'choices': [{'message': {'content': 'test response'}}]
+        }
+        mock_post.return_value = mock_response
+        
+        result = self.client._call_llm("test prompt")
+        
+        assert result == 'test response'
+        call_args = mock_post.call_args
+        payload = call_args[1]['json']
+        assert payload['model'] == 'test-model'
