@@ -17,3 +17,6 @@ class Config:
     SEARCH_MIN_CHARS = 2
     
     MAX_SEARCH_RESULTS = 10
+    
+    # Transaction filtering
+    EXCLUDE_PENDING_TRANSACTIONS = True

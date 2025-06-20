@@ -3,6 +3,7 @@ import plistlib
 import xml.etree.ElementTree as ET
 from typing import List, Dict, Optional
 import logging
+from config import Config
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +36,7 @@ class MoneyMoneyClient:
             # Count total categories before filtering
             total_count = self._count_all_categories(categories)
             
-            flattened = self._flatten_categories(categories)
+            flattened = self._flatten_categories_with_context(categories)
             
             logger.info(f"Loaded {len(flattened)} assignable categories (leaf nodes) out of {total_count} total categories")
             
@@ -83,6 +84,47 @@ class MoneyMoneyClient:
             if has_subcategories:
                 flattened.extend(
                     self._flatten_categories(category['categories'], current_path)
+                )
+        
+        return flattened
+    
+    def _flatten_categories_with_context(self, categories: List[Dict], parent_path: str = "", hierarchy_level: int = 1) -> List[Dict]:
+        """Enhanced category flattening that includes parent context and hierarchy information."""
+        flattened = []
+        
+        for category in categories:
+            name = category.get('name', '')
+            uuid = category.get('uuid', '')
+            
+            current_path = f"{parent_path}\\{name}" if parent_path else name
+            
+            # Check if this category has subcategories
+            has_subcategories = 'categories' in category and category['categories']
+            
+            # Check if this is a group/folder category (not assignable)
+            is_group = category.get('group', False)
+            
+            # Only include categories that are:
+            # 1. Leaf nodes (no subcategories) AND
+            # 2. Not group categories (assignable)
+            if not has_subcategories and not is_group:
+                flattened.append({
+                    'uuid': uuid,
+                    'name': name,
+                    'path': current_path,
+                    'full_name': current_path,
+                    'parent_path': parent_path,
+                    'hierarchy_level': hierarchy_level
+                })
+            
+            # Recursively process subcategories
+            if has_subcategories:
+                flattened.extend(
+                    self._flatten_categories_with_context(
+                        category['categories'], 
+                        current_path, 
+                        hierarchy_level + 1
+                    )
                 )
         
         return flattened
@@ -146,12 +188,52 @@ class MoneyMoneyClient:
                 if not category or category.strip() == '':
                     uncategorized.append(transaction)
             
-            logger.info(f"Found {len(all_transactions)} total transactions, {len(uncategorized)} uncategorized")
-            return uncategorized
+            # Filter out pending transactions if configured to do so
+            if Config.EXCLUDE_PENDING_TRANSACTIONS:
+                booked_transactions = []
+                pending_count = 0
+                
+                for transaction in uncategorized:
+                    if self._is_transaction_booked(transaction):
+                        booked_transactions.append(transaction)
+                    else:
+                        pending_count += 1
+                
+                logger.info(f"Found {len(all_transactions)} total transactions, {len(uncategorized)} uncategorized, {pending_count} pending transactions excluded")
+                return booked_transactions
+            else:
+                logger.info(f"Found {len(all_transactions)} total transactions, {len(uncategorized)} uncategorized")
+                return uncategorized
             
         except Exception as e:
             logger.error(f"Failed to parse transactions: {e}")
             return []
+    
+    def _is_transaction_booked(self, transaction: Dict) -> bool:
+        """Determine if a transaction is fully booked (not pending)."""
+        # Check explicit booked flag
+        booked_flag = transaction.get('booked')
+        if booked_flag is not None:
+            # If explicitly set to False, it's pending
+            if booked_flag is False:
+                return False
+            # If explicitly set to True, it's booked
+            if booked_flag is True:
+                return True
+        
+        # Check for booking date presence
+        booking_date = transaction.get('bookingDate')
+        if booking_date is not None:
+            # Has a booking date, likely booked
+            return True
+        
+        # If neither booked flag nor booking date is present/reliable,
+        # treat as pending for safety (conservative approach)
+        if booked_flag is None and booking_date is None:
+            return False
+        
+        # Default to booked if we have some indication it's processed
+        return True
     
     def set_transaction_category(self, transaction_id: int, category_path: str) -> bool:
         script = f'''tell application "{self.app_name}"
