@@ -2,6 +2,8 @@ import logging
 import sys
 import tty
 import termios
+import subprocess
+import shutil
 from typing import List, Dict, Optional
 from fuzzywuzzy import fuzz
 from config import Config
@@ -14,6 +16,7 @@ class CategorySelector:
         self.categories = categories
         self.sorted_categories = sorted(categories, key=lambda x: x['full_name'])
         self.test_mode = test_mode
+        self.fzf_available = shutil.which('fzf') is not None
     
     def _getch(self) -> str:
         """Get a single character from stdin without requiring Enter."""
@@ -87,7 +90,10 @@ class CategorySelector:
                 print(f"\n⚡ {BOLD}Options:{RESET}")
                 if suggestions:
                     print(f"   {GREEN}[1-{len(suggestions)}]{RESET} 🎯 Accept suggestion")
-                print(f"   {CYAN}[s]{RESET} 🔍 Search all categories")
+                if self.fzf_available:
+                    print(f"   {CYAN}[s]{RESET} 🔍 Search categories (FZF)")
+                else:
+                    print(f"   {CYAN}[s]{RESET} 🔍 Search all categories")
                 print(f"   {YELLOW}[n]{RESET} ⏭️  Skip this transaction")
                 print(f"   \033[91m[q]{RESET} 🚪 Quit")
                 
@@ -121,6 +127,55 @@ class CategorySelector:
                 print("An error occurred. Please try again.")
     
     def _search_categories(self) -> Optional[Dict]:
+        if self.fzf_available:
+            return self._fzf_search_categories()
+        else:
+            return self._fallback_search_categories()
+    
+    def _fzf_search_categories(self) -> Optional[Dict]:
+        try:
+            # Prepare category list for FZF
+            category_lines = []
+            for category in self.sorted_categories:
+                category_lines.append(category['full_name'])
+            
+            # Create FZF process
+            fzf_process = subprocess.Popen(
+                ['fzf', '--height=50%', '--reverse', '--prompt=Category: ', '--header=Select a category (ESC to cancel)'],
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True
+            )
+            
+            # Send category list to FZF
+            stdout, stderr = fzf_process.communicate('\n'.join(category_lines))
+            
+            if fzf_process.returncode == 0:  # User made a selection
+                selected_name = stdout.strip()
+                for category in self.categories:
+                    if category['full_name'] == selected_name:
+                        return {
+                            'action': 'categorize',
+                            'category': category
+                        }
+            elif fzf_process.returncode == 1:  # No match found
+                print("No category selected.")
+                return {'action': 'back'}
+            elif fzf_process.returncode == 130:  # User cancelled (Ctrl+C or ESC)
+                return {'action': 'back'}
+            else:
+                logger.warning(f"FZF exited with code {fzf_process.returncode}: {stderr}")
+                return {'action': 'back'}
+                
+        except Exception as e:
+            logger.error(f"Error using FZF: {e}")
+            print("FZF search failed, falling back to regular search.")
+            return self._fallback_search_categories()
+        
+        return {'action': 'back'}
+    
+    def _fallback_search_categories(self) -> Optional[Dict]:
         print("\nCategory Search")
         print("-" * 30)
         print("Enter search terms (minimum 2 characters), or 'back' to return:")
