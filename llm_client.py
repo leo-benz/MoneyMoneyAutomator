@@ -10,6 +10,7 @@ class LMStudioClient:
     
     def __init__(self):
         self.base_url = Config.LM_STUDIO_BASE_URL
+        self.model = Config.LM_STUDIO_MODEL
         self.session = requests.Session()
         self.session.headers.update({
             'Content-Type': 'application/json'
@@ -108,12 +109,17 @@ Respond only with valid JSON."""
                 }
             ],
             "temperature": 0.3,
-            "max_tokens": 4000,
+            "max_tokens": 8000,
             "stream": False
         }
         
+        # Add model specification if configured or auto-detect
+        model_to_use = self._get_model_to_use()
+        if model_to_use:
+            payload["model"] = model_to_use
+        
         try:
-            response = self.session.post(url, json=payload, timeout=60)
+            response = self.session.post(url, json=payload, timeout=120)
             response.raise_for_status()
             
             result = response.json()
@@ -190,12 +196,68 @@ Respond only with valid JSON."""
         
         return None
     
-    def test_connection(self) -> bool:
+    def _get_model_to_use(self) -> Optional[str]:
+        """Get the model to use for API calls. Returns configured model or auto-detects."""
+        if self.model:
+            logger.debug(f"Using configured model: {self.model}")
+            return self.model
+        
+        # Auto-detect available models
+        try:
+            available_models = self._get_available_models()
+            if not available_models:
+                logger.warning("No models available in LM Studio")
+                return None
+            
+            if len(available_models) == 1:
+                model = available_models[0]
+                logger.info(f"Auto-detected single model: {model}")
+                return model
+            
+            # Multiple models available - prefer chat models, then pick the first one
+            chat_models = [m for m in available_models if any(keyword in m.lower() 
+                          for keyword in ['chat', 'instruct', 'conversation'])]
+            
+            if chat_models:
+                model = chat_models[0]
+                logger.info(f"Auto-selected chat model: {model} from {len(available_models)} available models")
+                return model
+            else:
+                model = available_models[0]
+                logger.info(f"Auto-selected first model: {model} from {len(available_models)} available models")
+                return model
+                
+        except Exception as e:
+            logger.error(f"Failed to auto-detect model: {e}")
+            return None
+    
+    def _get_available_models(self) -> List[str]:
+        """Get list of available models from LM Studio."""
         try:
             url = f"{self.base_url}/models"
             response = self.session.get(url, timeout=5)
             response.raise_for_status()
-            logger.info("LM Studio connection successful")
+            
+            result = response.json()
+            models = [model.get('id', '') for model in result.get('data', [])]
+            return [m for m in models if m]  # Filter out empty strings
+            
+        except Exception as e:
+            logger.error(f"Failed to get available models: {e}")
+            return []
+    
+    def test_connection(self) -> bool:
+        try:
+            available_models = self._get_available_models()
+            if not available_models:
+                logger.error("LM Studio connection failed: No models available")
+                return False
+            
+            logger.info(f"LM Studio connection successful - {len(available_models)} model(s) available")
+            if len(available_models) > 1:
+                selected_model = self._get_model_to_use()
+                logger.info(f"Will use model: {selected_model}")
+            
             return True
         except Exception as e:
             logger.error(f"LM Studio connection failed: {e}")
