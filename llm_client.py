@@ -32,7 +32,15 @@ class LMStudioClient:
     def _format_categories_for_prompt(self, categories: List[Dict]) -> str:       
         formatted = []
         for cat in categories:
-            formatted.append(f"- {cat['full_name']} (UUID: {cat['uuid']})")
+            category_line = f"- {cat['full_name']} (UUID: {cat['uuid']})"
+            
+            # Add hierarchy context if available
+            if 'parent_path' in cat and cat['parent_path']:
+                category_line += f" [Parent: {cat['parent_path']}]"
+            if 'hierarchy_level' in cat:
+                category_line += f" [Level: {cat['hierarchy_level']}]"
+                
+            formatted.append(category_line)
         return '\n'.join(formatted)
     
     def _build_categorization_prompt(self, transaction: Dict, category_list: str) -> str:
@@ -67,10 +75,15 @@ class LMStudioClient:
 
 IMPORTANT: Only suggest categories that are in the provided list. Each suggestion must include the exact category path and UUID from the list.
 
+The categories are organized hierarchically - use this context to make better suggestions:
+- Higher hierarchy levels (like Level 3) are more specific than lower levels (Level 1)
+- Parent categories provide context for understanding the category's purpose
+- Choose the most specific category that matches the transaction when possible
+
 Transaction Details:
 {transaction_desc}
 
-Available Categories:
+Available Categories (with hierarchy context):
 {category_list}
 
 Please provide your top {Config.NUM_SUGGESTIONS} category suggestions in the following JSON format:
@@ -119,7 +132,7 @@ Respond only with valid JSON."""
             payload["model"] = model_to_use
         
         try:
-            response = self.session.post(url, json=payload, timeout=120)
+            response = self.session.post(url, json=payload, timeout=240)
             response.raise_for_status()
             
             result = response.json()
@@ -246,6 +259,116 @@ Respond only with valid JSON."""
             logger.error(f"Failed to get available models: {e}")
             return []
     
+    def generate_categorization_rule(self, transaction: Dict, category: Dict) -> Optional[Dict]:
+        """Generate a MoneyMoney categorization rule for the given transaction and category."""
+        name = transaction.get('name', 'Unknown')
+        amount = transaction.get('amount', 0)
+        purpose = transaction.get('purpose', '')
+        comment = transaction.get('comment', '')
+        booking_text = transaction.get('bookingText', '')
+        
+        # Build transaction description for rule generation
+        transaction_desc = f"Merchant/Name: {name}\nAmount: {amount}"
+        
+        if purpose:
+            transaction_desc += f"\nDescription: {purpose}"
+            
+        if comment:
+            transaction_desc += f"\nUser Comment: {comment}"
+            
+        if booking_text:
+            transaction_desc += f"\nBank Booking Text: {booking_text}"
+        
+        category_path = category.get('full_name', 'Unknown')
+        
+        prompt = f"""You are an expert at creating MoneyMoney categorization rules. Generate a precise rule that would automatically categorize similar transactions to the category "{category_path}".
+
+Transaction to analyze:
+{transaction_desc}
+
+Target Category: {category_path}
+
+MoneyMoney Rule Syntax:
+- Search for words using text in quotes: "STARBUCKS"
+- Use field prefixes: name:"text", purpose:"text", amount>value, amount<value
+- Combine conditions: AND, OR, NOT
+- Use parentheses for grouping: (condition1 OR condition2) AND condition3
+- Available fields: name, purpose, local_account, remote_account, currency, reference, mandate, creditor_id, comment, booking_text
+
+Create a rule that:
+1. Is specific enough to avoid false positives
+2. Is general enough to catch similar transactions
+3. Uses the most reliable transaction fields (name is usually most reliable)
+4. Considers amount ranges if relevant for this type of transaction
+
+Respond with JSON in this exact format:
+{{
+    "rule": "exact MoneyMoney rule syntax here",
+    "explanation": "brief explanation of what this rule matches",
+    "confidence": 0.85
+}}
+
+Examples of good rules:
+- name:"STARBUCKS" (matches all Starbucks transactions)
+- name:"SHELL" AND purpose:"FUEL" (gas station fuel purchases)
+- name:"AMAZON" AND amount<50.00 (small Amazon purchases)
+- purpose:"SALARY" OR purpose:"WAGE" (salary payments)
+
+Respond only with valid JSON."""
+
+        try:
+            response = self._call_llm(prompt)
+            return self._parse_rule_response(response)
+        except Exception as e:
+            logger.error(f"Rule generation failed: {e}")
+            return None
+    
+    def _parse_rule_response(self, llm_response: str) -> Optional[Dict]:
+        """Parse the LLM response for rule generation."""
+        try:
+            # Clean the response - remove thinking tags first
+            cleaned_response = llm_response.strip()
+            
+            # Remove thinking tags that some models output
+            import re
+            cleaned_response = re.sub(r'<think>.*?</think>', '', cleaned_response, flags=re.DOTALL)
+            cleaned_response = re.sub(r'<thinking>.*?</thinking>', '', cleaned_response, flags=re.DOTALL)
+            cleaned_response = cleaned_response.strip()
+            
+            # Handle markdown-wrapped JSON
+            if '```json' in cleaned_response:
+                start = cleaned_response.find('```json') + 7
+                end = cleaned_response.find('```', start)
+                if end != -1:
+                    cleaned_response = cleaned_response[start:end].strip()
+            elif '```' in cleaned_response:
+                start = cleaned_response.find('```') + 3
+                end = cleaned_response.find('```', start)
+                if end != -1:
+                    cleaned_response = cleaned_response[start:end].strip()
+            
+            logger.debug(f"Cleaned rule response: {cleaned_response}")
+            data = json.loads(cleaned_response)
+            
+            # Validate required fields
+            if 'rule' in data and 'explanation' in data and 'confidence' in data:
+                return {
+                    'rule': data['rule'],
+                    'explanation': data['explanation'],
+                    'confidence': float(data['confidence'])
+                }
+            else:
+                logger.error("Rule response missing required fields")
+                return None
+                
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse rule response as JSON: {e}")
+            logger.error(f"Raw response: {repr(llm_response)}")
+            return None
+        except Exception as e:
+            logger.error(f"Error parsing rule response: {e}")
+            return None
+
     def test_connection(self) -> bool:
         try:
             available_models = self._get_available_models()
