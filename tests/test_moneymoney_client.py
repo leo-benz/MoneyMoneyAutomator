@@ -12,15 +12,26 @@ class TestMoneyMoneyClient:
             {
                 'name': 'Food & Dining',
                 'uuid': 'food-uuid',
-                'categories': [
-                    {'name': 'Coffee', 'uuid': 'coffee-uuid'},
-                    {'name': 'Restaurants', 'uuid': 'restaurant-uuid'}
-                ]
+                'group': True,
+                'indentation': 0
+            },
+            {
+                'name': 'Coffee',
+                'uuid': 'coffee-uuid',
+                'group': False,
+                'indentation': 1
+            },
+            {
+                'name': 'Restaurants',
+                'uuid': 'restaurant-uuid',
+                'group': False,
+                'indentation': 1
             },
             {
                 'name': 'Transportation',
                 'uuid': 'transport-uuid',
-                'categories': []
+                'group': False,
+                'indentation': 0
             }
         ]
         
@@ -84,11 +95,11 @@ class TestMoneyMoneyClient:
         assert result[0]['path'] == 'Test'
         assert result[0]['full_name'] == 'Test'
     
-    def test_flatten_categories_nested(self):
-        result = self.client._flatten_categories(self.sample_categories_plist)
+    def test_process_indentation_hierarchy(self):
+        result = self.client._process_indentation_hierarchy(self.sample_categories_plist)
         
         # Only leaf nodes should be included (Coffee, Restaurants, Transportation)
-        # Food & Dining should be excluded as it has subcategories
+        # Food & Dining should be excluded as it's a group category
         assert len(result) == 3
         
         # Food & Dining should not be in results as it's a parent category
@@ -96,14 +107,15 @@ class TestMoneyMoneyClient:
         assert 'Food & Dining' not in food_names
         
         coffee_category = next(c for c in result if c['name'] == 'Coffee')
-        assert coffee_category['path'] == 'Food & Dining\\Coffee'
+        assert coffee_category['full_name'] == 'Food & Dining > Coffee'
+        assert coffee_category['moneymoney_path'] == 'Food & Dining\\Coffee'
         assert coffee_category['uuid'] == 'coffee-uuid'
         
         restaurant_category = next(c for c in result if c['name'] == 'Restaurants')
-        assert restaurant_category['path'] == 'Food & Dining\\Restaurants'
+        assert restaurant_category['full_name'] == 'Food & Dining > Restaurants'
         
         transport_category = next(c for c in result if c['name'] == 'Transportation')
-        assert transport_category['path'] == 'Transportation'
+        assert transport_category['full_name'] == 'Transportation'
     
     @patch.object(MoneyMoneyClient, '_run_applescript')
     def test_get_categories_success(self, mock_run):
@@ -112,9 +124,20 @@ class TestMoneyMoneyClient:
         
         result = self.client.get_categories()
         
-        # Only leaf nodes should be returned (3 instead of 4)
+        # Only leaf nodes should be returned (3: Coffee, Restaurants, Transportation)
         assert len(result) == 3
         mock_run.assert_called_once_with('tell application "MoneyMoney" to export categories')
+        
+        # Verify the hierarchical structure
+        coffee_cat = next(cat for cat in result if cat['name'] == 'Coffee')
+        assert coffee_cat['full_name'] == 'Food & Dining > Coffee'
+        assert coffee_cat['moneymoney_path'] == 'Food & Dining\\Coffee'
+        
+        restaurants_cat = next(cat for cat in result if cat['name'] == 'Restaurants')
+        assert restaurants_cat['full_name'] == 'Food & Dining > Restaurants'
+        
+        transport_cat = next(cat for cat in result if cat['name'] == 'Transportation')
+        assert transport_cat['full_name'] == 'Transportation'  # Top-level category
     
     @patch.object(MoneyMoneyClient, '_run_applescript')
     def test_get_categories_parse_error(self, mock_run):
@@ -470,8 +493,8 @@ class TestHierarchicalCategoryStructure:
         
         # Check Starbucks has full parent context
         starbucks = next(c for c in result if c['name'] == 'Starbucks')
-        assert starbucks['full_name'] == 'Food & Dining\\Coffee Shops\\Starbucks'
-        assert starbucks['parent_path'] == 'Food & Dining\\Coffee Shops'
+        assert starbucks['full_name'] == 'Food & Dining > Coffee Shops > Starbucks'
+        assert starbucks['parent_path'] == 'Food & Dining > Coffee Shops'
         assert starbucks['hierarchy_level'] == 3
         
         # Check Bills (top-level with no subcategories)
@@ -482,7 +505,7 @@ class TestHierarchicalCategoryStructure:
         
         # Check Gas (second level)
         gas = next(c for c in result if c['name'] == 'Gas')
-        assert gas['full_name'] == 'Transportation\\Gas'
+        assert gas['full_name'] == 'Transportation > Gas'
         assert gas['parent_path'] == 'Transportation'
         assert gas['hierarchy_level'] == 2
     
@@ -498,7 +521,7 @@ class TestHierarchicalCategoryStructure:
         
         for cat in food_categories:
             if cat['name'] in ['Starbucks', 'Local Coffee']:
-                assert cat['parent_path'] == 'Food & Dining\\Coffee Shops'
+                assert cat['parent_path'] == 'Food & Dining > Coffee Shops'
             elif cat['name'] in ['Restaurants', 'Fast Food']:
                 assert cat['parent_path'] == 'Food & Dining'
     
@@ -536,16 +559,17 @@ class TestHierarchicalCategoryStructure:
         assert starbucks['hierarchy_level'] == 3
     
     @patch.object(MoneyMoneyClient, '_run_applescript')
-    def test_get_categories_uses_enhanced_flattening(self, mock_applescript):
-        """Test that get_categories uses the enhanced flattening method."""
+    def test_get_categories_uses_indentation_processing(self, mock_applescript):
+        """Test that get_categories uses the indentation hierarchy processing method."""
         mock_applescript.return_value = plistlib.dumps(self.hierarchical_categories).decode('utf-8')
         
-        with patch.object(self.client, '_flatten_categories_with_context') as mock_flatten:
-            mock_flatten.return_value = [
+        with patch.object(self.client, '_process_indentation_hierarchy') as mock_process:
+            mock_process.return_value = [
                 {
                     'uuid': 'test-uuid',
                     'name': 'Test Category',
-                    'full_name': 'Parent\\Test Category',
+                    'full_name': 'Parent > Test Category',
+                    'moneymoney_path': 'Parent\\Test Category',
                     'parent_path': 'Parent',
                     'hierarchy_level': 2
                 }
@@ -553,8 +577,8 @@ class TestHierarchicalCategoryStructure:
             
             result = self.client.get_categories()
             
-            # Should call enhanced flattening method
-            mock_flatten.assert_called_once_with(self.hierarchical_categories)
+            # Should call indentation processing method
+            mock_process.assert_called_once_with(self.hierarchical_categories)
             assert len(result) == 1
             assert result[0]['parent_path'] == 'Parent'
     

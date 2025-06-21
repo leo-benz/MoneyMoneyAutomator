@@ -34,11 +34,11 @@ def sample_transaction():
 def sample_categories():
     """Sample categories for testing"""
     return [
-        {'uuid': '1', 'name': 'Coffee', 'full_name': 'Food & Dining\\Coffee'},
-        {'uuid': '2', 'name': 'Gas', 'full_name': 'Transportation\\Gas'},
-        {'uuid': '3', 'name': 'Groceries', 'full_name': 'Shopping\\Groceries'},
-        {'uuid': '4', 'name': 'Restaurants', 'full_name': 'Food & Dining\\Restaurants'},
-        {'uuid': '5', 'name': 'Utilities', 'full_name': 'Bills\\Utilities'}
+        {'uuid': '1', 'name': 'Coffee', 'full_name': 'Food & Dining > Coffee', 'moneymoney_path': 'Food & Dining\\Coffee'},
+        {'uuid': '2', 'name': 'Gas', 'full_name': 'Transportation > Gas', 'moneymoney_path': 'Transportation\\Gas'},
+        {'uuid': '3', 'name': 'Groceries', 'full_name': 'Shopping > Groceries', 'moneymoney_path': 'Shopping\\Groceries'},
+        {'uuid': '4', 'name': 'Restaurants', 'full_name': 'Food & Dining > Restaurants', 'moneymoney_path': 'Food & Dining\\Restaurants'},
+        {'uuid': '5', 'name': 'Utilities', 'full_name': 'Bills > Utilities', 'moneymoney_path': 'Bills\\Utilities'}
     ]
 
 @pytest.fixture
@@ -46,12 +46,12 @@ def sample_suggestions():
     """Sample AI suggestions for testing"""
     return [
         {
-            'category': {'uuid': '1', 'full_name': 'Food & Dining\\Coffee'},
+            'category': {'uuid': '1', 'full_name': 'Food & Dining > Coffee', 'moneymoney_path': 'Food & Dining\\Coffee'},
             'confidence': 0.9,
             'reasoning': 'Transaction at coffee shop'
         },
         {
-            'category': {'uuid': '2', 'full_name': 'Transportation\\Gas'},
+            'category': {'uuid': '2', 'full_name': 'Transportation > Gas', 'moneymoney_path': 'Transportation\\Gas'},
             'confidence': 0.7,
             'reasoning': 'Gas station transaction'
         }

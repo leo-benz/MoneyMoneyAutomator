@@ -163,7 +163,7 @@ class TestTransactionCategorizer:
         mock_selector = Mock()
         mock_selector.get_user_choice.return_value = {
             'action': 'categorize',
-            'category': {'uuid': '1', 'full_name': 'Food & Dining\\Coffee'}
+            'category': {'uuid': '1', 'full_name': 'Food & Dining > Coffee', 'moneymoney_path': 'Food & Dining\\Coffee'}
         }
         mock_selector_class.return_value = mock_selector
         
@@ -207,13 +207,13 @@ class TestTransactionCategorizer:
         mock_money.return_value = mock_money_instance
         
         categorizer = TransactionCategorizer('2024-01-01')
-        category = {'full_name': 'Food & Dining\\Coffee'}
+        category = {'full_name': 'Food & Dining > Coffee', 'moneymoney_path': 'Food & Dining\\Coffee'}
         
         result = categorizer._apply_categorization(self.sample_transactions[0], category)
         
         assert result is True
         output = mock_stdout.getvalue()
-        assert 'Applying category: Food & Dining\\Coffee' in output
+        assert 'Applying category: Food & Dining > Coffee' in output
         assert '✅ Category applied successfully' in output
         mock_money_instance.set_transaction_category.assert_called_once_with(12345, 'Food & Dining\\Coffee')
     

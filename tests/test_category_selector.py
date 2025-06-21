@@ -9,22 +9,22 @@ class TestCategorySelector:
     
     def setup_method(self):
         self.sample_categories = [
-            {'uuid': '1', 'name': 'Coffee', 'full_name': 'Food & Dining\\Coffee'},
-            {'uuid': '2', 'name': 'Gas', 'full_name': 'Transportation\\Gas'},
-            {'uuid': '3', 'name': 'Groceries', 'full_name': 'Shopping\\Groceries'},
-            {'uuid': '4', 'name': 'Restaurants', 'full_name': 'Food & Dining\\Restaurants'},
-            {'uuid': '5', 'name': 'Utilities', 'full_name': 'Bills\\Utilities'}
+            {'uuid': '1', 'name': 'Coffee', 'full_name': 'Food & Dining > Coffee', 'moneymoney_path': 'Food & Dining\\Coffee'},
+            {'uuid': '2', 'name': 'Gas', 'full_name': 'Transportation > Gas', 'moneymoney_path': 'Transportation\\Gas'},
+            {'uuid': '3', 'name': 'Groceries', 'full_name': 'Shopping > Groceries', 'moneymoney_path': 'Shopping\\Groceries'},
+            {'uuid': '4', 'name': 'Restaurants', 'full_name': 'Food & Dining > Restaurants', 'moneymoney_path': 'Food & Dining\\Restaurants'},
+            {'uuid': '5', 'name': 'Utilities', 'full_name': 'Bills > Utilities', 'moneymoney_path': 'Bills\\Utilities'}
         ]
         self.selector = CategorySelector(self.sample_categories)
         
         self.sample_suggestions = [
             {
-                'category': {'uuid': '1', 'full_name': 'Food & Dining\\Coffee'},
+                'category': {'uuid': '1', 'full_name': 'Food & Dining > Coffee', 'moneymoney_path': 'Food & Dining\\Coffee'},
                 'confidence': 0.9,
                 'reasoning': 'Transaction at coffee shop'
             },
             {
-                'category': {'uuid': '2', 'full_name': 'Transportation\\Gas'},
+                'category': {'uuid': '2', 'full_name': 'Transportation > Gas', 'moneymoney_path': 'Transportation\\Gas'},
                 'confidence': 0.7,
                 'reasoning': 'Gas station transaction'
             }
@@ -33,7 +33,7 @@ class TestCategorySelector:
     def test_init(self):
         assert len(self.selector.categories) == 5
         assert len(self.selector.sorted_categories) == 5
-        assert self.selector.sorted_categories[0]['full_name'] == 'Bills\\Utilities'
+        assert self.selector.sorted_categories[0]['full_name'] == 'Bills > Utilities'
         assert hasattr(self.selector, 'fzf_available')
     
     @patch('sys.stdout', new_callable=StringIO)
@@ -42,8 +42,8 @@ class TestCategorySelector:
         
         output = mock_stdout.getvalue()
         assert 'AI Category Suggestions:' in output
-        assert 'Food & Dining\\Coffee' in output
-        assert 'Transportation\\Gas' in output
+        assert 'Food & Dining > Coffee' in output
+        assert 'Transportation > Gas' in output
         assert '90%' in output
         assert '70%' in output
         assert 'Transaction at coffee shop' in output
@@ -144,8 +144,8 @@ class TestCategorySelector:
         
         output = mock_stdout.getvalue()
         assert 'Found 2 matching categories:' in output
-        assert 'Food & Dining\\Coffee' in output
-        assert 'Transportation\\Gas' in output
+        assert 'Food & Dining > Coffee' in output
+        assert 'Transportation > Gas' in output
         
         assert result['action'] == 'categorize'
         assert result['category']['uuid'] == '1'
@@ -275,7 +275,7 @@ class TestCategorySelector:
         selector = CategorySelector(self.sample_categories)
         
         mock_process = Mock()
-        mock_process.communicate.return_value = ('Food & Dining\\Coffee\n', '')
+        mock_process.communicate.return_value = ('Food & Dining > Coffee\n', '')
         mock_process.returncode = 0
         mock_popen.return_value = mock_process
         
