@@ -307,8 +307,11 @@ class MoneyMoneyClient:
         return True
     
     def set_transaction_category(self, transaction_id: int, category_path: str) -> bool:
+        # Escape quotes and backslashes in the category path for AppleScript
+        escaped_path = category_path.replace('\\', '\\\\').replace('"', '\\"')
+        
         script = f'''tell application "{self.app_name}"
-    set transaction id {transaction_id} category to "{category_path}"
+    set transaction id {transaction_id} category to "{escaped_path}"
 end tell'''
         
         try:

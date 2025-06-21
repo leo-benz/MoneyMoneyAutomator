@@ -196,7 +196,19 @@ end tell'''
         
         assert result is True
         expected_script = '''tell application "MoneyMoney"
-    set transaction id 12345 category to "Food & Dining\\Coffee"
+    set transaction id 12345 category to "Food & Dining\\\\Coffee"
+end tell'''
+        mock_run.assert_called_once_with(expected_script)
+    
+    @patch.object(MoneyMoneyClient, '_run_applescript')
+    def test_set_transaction_category_with_quotes(self, mock_run):
+        mock_run.return_value = ""
+        
+        result = self.client.set_transaction_category(12345, 'Category with "quotes" and backslash\\')
+        
+        assert result is True
+        expected_script = '''tell application "MoneyMoney"
+    set transaction id 12345 category to "Category with \\"quotes\\" and backslash\\\\"
 end tell'''
         mock_run.assert_called_once_with(expected_script)
     
