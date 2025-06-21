@@ -109,6 +109,7 @@ Categorization Guidelines:
 6. Ignore saveback/cashback information - categorize based on the actual purchase
 7. Only use categories from the provided list with exact names and UUIDs
 8. IMPORTANT: Each category UUID must appear only once in your suggestions - do not duplicate categories
+9. Negative amounts are expenses, positive amounts are income - categorize accordingly
 
 Respond only with valid JSON."""
         
