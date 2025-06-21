@@ -252,14 +252,17 @@ class TransactionCategorizer:
         return False
     
     def _apply_categorization(self, transaction: Dict, category: Dict) -> bool:
-        category_path = category['full_name']
+        # Use display format for logging
+        display_path = category['full_name']
+        # Use MoneyMoney format for API call
+        category_path = category.get('moneymoney_path', category['full_name'])
         transaction_id = transaction.get('id')
         
         if not transaction_id:
             print("Error: Transaction ID not found.")
             return False
         
-        print(f"\n📂 Applying category: {category_path}")
+        print(f"\n📂 Applying category: {display_path}")
         
         if self.dry_run:
             print("🔄 DRY RUN: Would categorize transaction")
