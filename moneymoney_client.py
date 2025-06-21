@@ -33,10 +33,20 @@ class MoneyMoneyClient:
         try:
             categories = plistlib.loads(plist_data.encode('utf-8'))
             
-            # Count total categories before filtering
-            total_count = self._count_all_categories(categories)
+            # Debug: Log the raw category structure
+            logger.debug(f"Raw categories structure: {len(categories)} categories found")
             
-            flattened = self._flatten_categories_with_context(categories)
+            # Count total categories before filtering
+            total_count = len(categories)
+            
+            # Process indentation-based hierarchy from MoneyMoney
+            flattened = self._process_indentation_hierarchy(categories)
+            
+            # Debug: Log some example flattened categories
+            if flattened:
+                logger.debug(f"Example flattened categories:")
+                for i, cat in enumerate(flattened[:5]):  # First 5 examples
+                    logger.debug(f"  {i+1}. name='{cat['name']}', full_name='{cat['full_name']}', parent_path='{cat.get('parent_path', '')}'")
             
             logger.info(f"Loaded {len(flattened)} assignable categories (leaf nodes) out of {total_count} total categories")
             
@@ -61,7 +71,7 @@ class MoneyMoneyClient:
             name = category.get('name', '')
             uuid = category.get('uuid', '')
             
-            current_path = f"{parent_path}\\{name}" if parent_path else name
+            current_path = f"{parent_path} > {name}" if parent_path else name
             
             # Check if this category has subcategories
             has_subcategories = 'categories' in category and category['categories']
@@ -88,7 +98,7 @@ class MoneyMoneyClient:
         
         return flattened
     
-    def _flatten_categories_with_context(self, categories: List[Dict], parent_path: str = "", hierarchy_level: int = 1) -> List[Dict]:
+    def _flatten_categories_with_context(self, categories: List[Dict], parent_path: str = "", parent_path_mm: str = "", hierarchy_level: int = 1) -> List[Dict]:
         """Enhanced category flattening that includes parent context and hierarchy information."""
         flattened = []
         
@@ -96,7 +106,11 @@ class MoneyMoneyClient:
             name = category.get('name', '')
             uuid = category.get('uuid', '')
             
-            current_path = f"{parent_path}\\{name}" if parent_path else name
+            # Build current path with ' > ' separator for display
+            current_path = f"{parent_path} > {name}" if parent_path else name
+            
+            # Build MoneyMoney path with '\' separator for API compatibility
+            current_path_mm = f"{parent_path_mm}\\{name}" if parent_path_mm else name
             
             # Check if this category has subcategories
             has_subcategories = 'categories' in category and category['categories']
@@ -112,20 +126,77 @@ class MoneyMoneyClient:
                     'uuid': uuid,
                     'name': name,
                     'path': current_path,
-                    'full_name': current_path,
+                    'full_name': current_path,  # Display format with ' > '
+                    'moneymoney_path': current_path_mm,  # MoneyMoney API format with '\'
                     'parent_path': parent_path,
                     'hierarchy_level': hierarchy_level
                 })
+                logger.debug(f"Added leaf category: '{current_path}' (MM path: '{current_path_mm}', UUID: {uuid})")
             
             # Recursively process subcategories
             if has_subcategories:
+                logger.debug(f"Processing subcategories for: '{current_path}' (has {len(category['categories'])} subcategories)")
                 flattened.extend(
                     self._flatten_categories_with_context(
                         category['categories'], 
-                        current_path, 
+                        current_path,
+                        current_path_mm,
                         hierarchy_level + 1
                     )
                 )
+        
+        return flattened
+    
+    def _process_indentation_hierarchy(self, categories: List[Dict]) -> List[Dict]:
+        """Process MoneyMoney's indentation-based category hierarchy."""
+        flattened = []
+        parent_stack = []  # Stack to track parent categories at each level
+        
+        for category in categories:
+            name = category.get('name', '')
+            uuid = category.get('uuid', '')
+            indentation = category.get('indentation', 0)
+            is_group = category.get('group', False)
+            
+            # Adjust parent stack based on current indentation level
+            # Keep only parents at levels less than current indentation
+            parent_stack = parent_stack[:indentation]
+            
+            # Build the current hierarchy path
+            if parent_stack:
+                # Create display path with ' > ' separator
+                parent_names = [p['name'] for p in parent_stack]
+                current_path = ' > '.join(parent_names + [name])
+                parent_path = ' > '.join(parent_names)
+                
+                # Create MoneyMoney API path with '\' separator  
+                current_path_mm = '\\'.join(parent_names + [name])
+            else:
+                # Top-level category
+                current_path = name
+                parent_path = ""
+                current_path_mm = name
+            
+            # Only include leaf categories (not group categories) in the result
+            if not is_group:
+                flattened.append({
+                    'uuid': uuid,
+                    'name': name,
+                    'path': current_path,
+                    'full_name': current_path,  # Display format with ' > '
+                    'moneymoney_path': current_path_mm,  # MoneyMoney API format with '\'
+                    'parent_path': parent_path,
+                    'hierarchy_level': indentation + 1  # 1-based level
+                })
+                logger.debug(f"Added leaf category: '{current_path}' (MM path: '{current_path_mm}', UUID: {uuid})")
+            else:
+                # Group category - add to parent stack for subsequent categories
+                parent_stack.append({
+                    'name': name,
+                    'uuid': uuid,
+                    'indentation': indentation
+                })
+                logger.debug(f"Processing group category: '{current_path}' (indentation: {indentation})")
         
         return flattened
     
