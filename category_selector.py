@@ -267,7 +267,7 @@ class CategorySelector:
         tree = {}
         
         for category in self.categories:
-            parts = category['full_name'].split('\\')
+            parts = category['full_name'].split(' > ')
             current = tree
             
             for part in parts:
