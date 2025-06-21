@@ -32,7 +32,9 @@ class LMStudioClient:
     def _format_categories_for_prompt(self, categories: List[Dict]) -> str:       
         formatted = []
         for cat in categories:
-            category_line = f"- {cat['full_name']} (UUID: {cat['uuid']})"
+            # Use MoneyMoney path format for consistency with existing training data
+            path_for_llm = cat.get('moneymoney_path', cat['full_name'])
+            category_line = f"- {path_for_llm} (UUID: {cat['uuid']})"
             
             # Add hierarchy context if available
             if 'parent_path' in cat and cat['parent_path']:
@@ -106,6 +108,7 @@ Categorization Guidelines:
 5. Match to logical expense categories
 6. Ignore saveback/cashback information - categorize based on the actual purchase
 7. Only use categories from the provided list with exact names and UUIDs
+8. IMPORTANT: Each category UUID must appear only once in your suggestions - do not duplicate categories
 
 Respond only with valid JSON."""
         
@@ -174,6 +177,8 @@ Respond only with valid JSON."""
             suggestions = data.get('suggestions', [])
             
             validated_suggestions = []
+            seen_uuids = set()
+            
             for suggestion in suggestions:
                 category_path = suggestion.get('category_path', '')
                 uuid = suggestion.get('uuid', '')
@@ -184,7 +189,8 @@ Respond only with valid JSON."""
                     categories, category_path, uuid
                 )
                 
-                if matching_category:
+                if matching_category and matching_category['uuid'] not in seen_uuids:
+                    seen_uuids.add(matching_category['uuid'])
                     validated_suggestions.append({
                         'category': matching_category,
                         'confidence': confidence,
@@ -199,12 +205,17 @@ Respond only with valid JSON."""
             return []
     
     def _find_category_by_path_or_uuid(self, categories: List[Dict], path: str, uuid: str) -> Optional[Dict]:
+        # First try exact matches
         for category in categories:
-            if category['uuid'] == uuid or category['full_name'] == path:
+            if (category['uuid'] == uuid or 
+                category['full_name'] == path or 
+                category.get('moneymoney_path', '') == path):
                 return category
         
+        # Then try partial matches on both path formats
         for category in categories:
-            if path.lower() in category['full_name'].lower():
+            if (path.lower() in category['full_name'].lower() or
+                path.lower() in category.get('moneymoney_path', '').lower()):
                 return category
         
         return None

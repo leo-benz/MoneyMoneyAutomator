@@ -124,6 +124,47 @@ class TestLMStudioClient:
         result = self.client._parse_suggestions(llm_response, self.sample_categories)
         assert result == []
     
+    def test_parse_suggestions_removes_duplicate_uuids(self):
+        """Test that duplicate category UUIDs are filtered out."""
+        llm_response = json.dumps({
+            "suggestions": [
+                {
+                    "category_path": "Food & Dining\\Coffee",
+                    "uuid": "123",
+                    "confidence": 0.9,
+                    "reasoning": "First suggestion"
+                },
+                {
+                    "category_path": "Food & Dining\\Coffee",
+                    "uuid": "123",
+                    "confidence": 0.8,
+                    "reasoning": "Duplicate suggestion"
+                },
+                {
+                    "category_path": "Entertainment\\Movies",
+                    "uuid": "456",
+                    "confidence": 0.7,
+                    "reasoning": "Different category"
+                }
+            ]
+        })
+        
+        result = self.client._parse_suggestions(llm_response, self.sample_categories)
+        
+        # Should only have 2 suggestions (duplicate UUID removed)
+        assert len(result) == 2
+        
+        # Should have only unique UUIDs
+        uuids = [suggestion['category']['uuid'] for suggestion in result]
+        assert len(set(uuids)) == len(uuids)
+        assert '123' in uuids
+        assert '456' in uuids
+        
+        # First occurrence should be kept (highest confidence)
+        coffee_suggestion = next(s for s in result if s['category']['uuid'] == '123')
+        assert coffee_suggestion['confidence'] == 0.9
+        assert coffee_suggestion['reasoning'] == "First suggestion"
+    
     def test_find_category_by_uuid(self):
         result = self.client._find_category_by_path_or_uuid(
             self.sample_categories, "", "123"
